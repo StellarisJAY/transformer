@@ -8,12 +8,13 @@ class DotProductAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.mask = torch.tril(torch.ones(d_embd, d_embd, device=device)).view(1, d_embd, d_embd) # 下三角矩阵，对角线上方0下方1
 
-    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, valid_len: torch.Tensor=None):
+    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor):
         d = q.shape[-1]
         n = q.shape[-2]
         # q: (B, n, d), k: (B, n, d), v: (B, n, d)
         scores = torch.bmm(q, k.transpose(1, 2)) / math.sqrt(d) # (B, n, n)
-        self.attention_weights = scores.masked_fill(self.mask[:, :n, :n] == 0, float('-inf'))
+        scores = scores.masked_fill(self.mask[:, :n, :n] == 0, float('-inf'))
+        self.attention_weights = torch.nn.functional.softmax(scores, dim=-1)
         return torch.bmm(self.dropout(self.attention_weights), v) # (B, nq, d)
 
 # 多头自注意力, GPT只使用自注意力
