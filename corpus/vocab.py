@@ -18,7 +18,7 @@ class Vocab:
         if isinstance(arr, torch.Tensor):
             arr = arr[0]
         seq =  [self.token_freqs[item][0] if item < self.__len__() else '<unk>' for item in arr]
-        return seq[0]
+        return seq
 
     def to_array(self, tokens: list):
         return [self.token_dict[token] if self.token_dict.__contains__(token) else self.token_dict['<unk>'] for token in tokens]

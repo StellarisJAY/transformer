@@ -1,6 +1,7 @@
 from torch import nn
 import torch
 import math
+from corpus.vocab import Vocab
 
 class DotProductAttention(nn.Module):
     def __init__(self, d_embd, dropout=0.0, device=None):
@@ -112,6 +113,7 @@ class GPT(nn.Module):
             ln = nn.LayerNorm(config.d_embd),
             out = nn.Linear(config.d_embd, config.vocab_size, device=self.device) # 输出映射
         ))
+        self.block_size = config.block_size
 
     def init_params(self):
         pass
@@ -128,5 +130,18 @@ class GPT(nn.Module):
         out = self.transformer.out(y)
         return out
     
-    def generate(self):
-        pass
+    def generate(self, input: torch.Tensor, max_tokens: int):
+        self.eval()
+        output = [token.item() for token in input[0]]
+        with torch.no_grad():
+            for _ in range(max_tokens):
+                # 去除input超出block_size的部分
+                if input.shape[1] > self.block_size:
+                    input = input[:, -self.block_size:] 
+                logits = self(input) # (1, n, d_embd)
+                logits = logits[:, -1, :] # (1, d_embd) 只取最后一个token的logits
+                probs = torch.nn.functional.softmax(logits, dim=-1) # (1, vocab_size)
+                next_token = torch.multinomial(probs, num_samples=1) # (1, 1) 从probs中采样一个token
+                input = torch.cat((input, next_token), dim=1) # (1, n+1) 把采样的token加到输入中
+                output.append(next_token.item()) # 把采样的token加到输出中
+        return output
