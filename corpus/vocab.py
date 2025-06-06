@@ -2,14 +2,16 @@ import collections
 import torch
 
 class Vocab:
-    def __init__(self, line_tokens:list):
+    def __init__(self, line_tokens:list, min_freq=1):
         # line_tokens是二维列表，把他展开成一维
         line_tokens = [token for line in line_tokens for token in line]
         # 统计每个token出现的次数
         token_freqs = collections.Counter(line_tokens)
-        self.token_freqs = [('<unk>', 0), ('<pad>', 0), ('<bos>', 0), ('<eos>', 0)]
+        self.token_freqs = [('<unk>', min_freq), ('<pad>', min_freq), ('<bos>', min_freq), ('<eos>', min_freq)]
         # 按照出现次数排序
         self.token_freqs.extend(sorted(token_freqs.items(), key=lambda x: x[1], reverse=True)) 
+        # 过滤掉出现次数小于min_freq的token
+        self.token_freqs = [token_freq for token_freq in self.token_freqs if token_freq[1] >= min_freq]
         self.token_dict = {}
         for i, token_freq in enumerate(self.token_freqs):
             self.token_dict[token_freq[0]] = i
