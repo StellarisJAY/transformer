@@ -1,4 +1,4 @@
-from torch import nn
+from torch import device, nn
 import torch
 from d2l import torch as d2l
 import math
@@ -9,7 +9,7 @@ import builtins
 # 掩蔽softmax
 # 输入 X.shape = (B, n, d)
 # 输入 valid_lens.shape = (B) 或 (B, n)
-def masked_softmax(X, valid_lens:None):
+def masked_softmax(X, valid_lens=None):
     # 没有长度限制，直接在最后一个维度softmax
     if valid_lens is None:
         return nn.functional.softmax(X, dim=-1)
@@ -25,7 +25,7 @@ def masked_softmax(X, valid_lens:None):
     X = torch.reshape(X, (-1, shape[-1]))
 
     maxlen = X.size(1)
-    mask = torch.arange((maxlen), dtype=torch.float32)[:] < valid_lens[:, None]
+    mask = torch.arange((maxlen), dtype=torch.float32, device=X.device)[:] < valid_lens[:, None]
     X[~mask] = -1e6
     return nn.functional.softmax(torch.reshape(X, shape), dim=-1)
 
@@ -50,12 +50,12 @@ class DotProductAttention(nn.Module):
 
 # 多头注意力
 class MultiheadAttention(nn.Module):
-    def __init__(self, query_size, key_size, value_size, num_hiddens, num_heads, dropout=0):
+    def __init__(self, query_size, key_size, value_size, num_hiddens, num_heads, dropout=0, device=None):
         super(MultiheadAttention, self).__init__()
-        self.W_q = nn.Linear(query_size, num_hiddens, bias=False)
-        self.W_k = nn.Linear(key_size, num_hiddens, bias=False)
-        self.W_v = nn.Linear(value_size, num_hiddens, bias=False)
-        self.W_o = nn.Linear(num_hiddens, num_hiddens, bias=False)
+        self.W_q = nn.Linear(query_size, num_hiddens, bias=False, device=device)
+        self.W_k = nn.Linear(key_size, num_hiddens, bias=False, device=device)
+        self.W_v = nn.Linear(value_size, num_hiddens, bias=False, device=device)
+        self.W_o = nn.Linear(num_hiddens, num_hiddens, bias=False, device=device)
         self.num_heads = num_heads
         self.attention = DotProductAttention(dropout=dropout)
     
@@ -115,21 +115,21 @@ class PositionEncoding(nn.Module):
         return X + self.P[:, :X.shape[1], :].to(X.device)
 # MLP
 class PointwiseFFN(nn.Module):
-    def __init__(self, num_inputs, num_hiddens, num_outputs):
+    def __init__(self, num_inputs, num_hiddens, num_outputs, device=None):
         super(PointwiseFFN, self).__init__()
-        self.dense1 = nn.Linear(num_inputs, num_hiddens)
+        self.dense1 = nn.Linear(num_inputs, num_hiddens, device=device)
         self.relu = nn.LeakyReLU()
-        self.dense2 = nn.Linear(num_hiddens, num_outputs)
+        self.dense2 = nn.Linear(num_hiddens, num_outputs, device=device)
     
     def forward(self, X):
         return self.dense2(self.relu(self.dense1(X)))
 
 # 残差+层规范化
 class AddNorm(nn.Module):
-    def __init__(self, normalize_shape, dropout=0):
+    def __init__(self, normalize_shape, dropout=0, device=None):
         super(AddNorm, self).__init__()
         self.dropout = nn.Dropout(dropout)
-        self.ln = nn.LayerNorm(normalized_shape=normalize_shape)
+        self.ln = nn.LayerNorm(normalized_shape=normalize_shape, device=device)
     
     def forward(self, X, Y):
         return self.ln(self.dropout(Y) + X)
@@ -137,17 +137,17 @@ class AddNorm(nn.Module):
 # 编码器块
 class EncoderBlock(nn.Module):
     def __init__(self, query_size, key_size, value_size, num_hiddens, 
-                 num_heads, norm_shape, ffn_num_inputs, ffn_num_hiddens, dropout=0):
+                 num_heads, norm_shape, ffn_num_inputs, ffn_num_hiddens, dropout=0, device=None):
         super(EncoderBlock, self).__init__()
         # 多头注意力
         self.attention = MultiheadAttention(query_size, key_size, value_size, 
-                                            num_hiddens, num_heads, dropout=dropout)
+                                            num_hiddens, num_heads, dropout=dropout, device=device)
         # 残差+规范化
-        self.add_norm1 = AddNorm(norm_shape, dropout)
+        self.add_norm1 = AddNorm(norm_shape, dropout, device=device)
         # MLP
-        self.ffn = PointwiseFFN(ffn_num_inputs, ffn_num_hiddens, num_hiddens)
+        self.ffn = PointwiseFFN(ffn_num_inputs, ffn_num_hiddens, num_hiddens, device=device)
         # 残差+规范化
-        self.add_norm2 = AddNorm(norm_shape, dropout)
+        self.add_norm2 = AddNorm(norm_shape, dropout, device=device)
     
     # 输入 X.shape = (B, n, d)，位置编码后的嵌入层输出
     # 输出 Y.shape = (B, n, d)，自注意力输入输出大小相同
@@ -165,11 +165,11 @@ class EncoderBlock(nn.Module):
 class TransformerEncoder(nn.Module):
     def __init__(self, vocab_size, query_size, key_size, value_size, num_hiddens, 
                  num_heads, norm_shape, ffn_num_inputs, ffn_num_hiddens, 
-                 num_layers, dropout=0):
+                 num_layers, dropout=0, device=None):
         super(TransformerEncoder, self).__init__()
         self.num_hiddens = num_hiddens
         # 嵌入层
-        self.embedding = nn.Embedding(vocab_size, num_hiddens)
+        self.embedding = nn.Embedding(vocab_size, num_hiddens, device=device)
         # 位置编码
         self.position_encoding = PositionEncoding(num_hiddens)
         # N个编码器块
@@ -178,7 +178,7 @@ class TransformerEncoder(nn.Module):
             self.blocks.add_module(f'enc_blk_{i}', 
                                    EncoderBlock(query_size, key_size, value_size, 
                                                 num_hiddens, num_heads, norm_shape, 
-                                                ffn_num_inputs, ffn_num_hiddens, dropout=dropout))
+                                                ffn_num_inputs, ffn_num_hiddens, dropout=dropout, device=device))
 
     # 输入X.shape = (B,n) 长度为n的词元序列
     # 输入valid_lens.shape = (B)
@@ -197,22 +197,22 @@ class TransformerEncoder(nn.Module):
 # 解码器块
 class DecoderBlock(nn.Module):
     def __init__(self, query_size, key_size, value_size, num_hiddens, 
-                 num_heads, norm_shape, ffn_num_inputs, ffn_num_hiddens, i, dropout=0):
+                 num_heads, norm_shape, ffn_num_inputs, ffn_num_hiddens, i, dropout=0, device=None):
         super(DecoderBlock, self).__init__()
         # 解码器块的序号
         self.i = i
         # 掩蔽多头注意力（解码器自注意力）
-        self.attention1 = MultiheadAttention(query_size, key_size, value_size, num_hiddens, num_heads, dropout=dropout)
+        self.attention1 = MultiheadAttention(query_size, key_size, value_size, num_hiddens, num_heads, dropout=dropout, device=device)
         # 掩蔽多头注意力之后的残差+规范化
-        self.add_norm1 = AddNorm(norm_shape, dropout)
+        self.add_norm1 = AddNorm(norm_shape, dropout, device=device)
         # 编码器KV解码器Q的多头注意力（编码器+解码器注意力）
-        self.attention2 = MultiheadAttention(query_size, key_size, value_size, num_hiddens, num_heads, dropout=dropout)
+        self.attention2 = MultiheadAttention(query_size, key_size, value_size, num_hiddens, num_heads, dropout=dropout, device=device)
         # 残差+规范化
-        self.add_norm2 = AddNorm(norm_shape, dropout)
+        self.add_norm2 = AddNorm(norm_shape, dropout, device=device)
         # MLP
-        self.ffn = PointwiseFFN(ffn_num_inputs, ffn_num_hiddens, num_hiddens)
+        self.ffn = PointwiseFFN(ffn_num_inputs, ffn_num_hiddens, num_hiddens, device=device)
         # 残差+规范化
-        self.add_norm3 = AddNorm(norm_shape, dropout)
+        self.add_norm3 = AddNorm(norm_shape, dropout, device=device)
 
     # 输入 X.shape = (B, n, d)
     # 输入 state，编码器状态，state = (编码器输出，编码器有效长度，解码器直到当前时间步每个块的输出)
@@ -229,7 +229,7 @@ class DecoderBlock(nn.Module):
         if self.training:
             batch_size, num_steps = X.shape[0], X.shape[1]
             # 设置每一个时间步的长度限制 
-            dec_valid_lens = torch.arange(1, num_steps + 1, 1, dtype=torch.float).repeat(batch_size, 1)
+            dec_valid_lens = torch.arange(1, num_steps + 1, 1, dtype=torch.float, device=X.device).repeat(batch_size, 1)
         else:
             # 预测时不需要掩蔽，因为输入的X不是完整序列
             dec_valid_lens = None
@@ -247,12 +247,12 @@ class DecoderBlock(nn.Module):
 # Transformer 解码器
 class TransformerDecoder(nn.Module):
     def __init__(self, vocab_size, query_size, key_size, value_size, num_hiddens, 
-                 num_heads, norm_shape, ffn_num_inputs, ffn_num_hiddens, num_layers, dropout=0):
+                 num_heads, norm_shape, ffn_num_inputs, ffn_num_hiddens, num_layers, dropout=0, device=None):
         super(TransformerDecoder, self).__init__()
         self.num_hiddens = num_hiddens
         self.num_layers = num_layers
         # 嵌入层
-        self.embedding = nn.Embedding(vocab_size, num_hiddens)
+        self.embedding = nn.Embedding(vocab_size, num_hiddens, device=device)
         # 位置编码
         self.position_encoding = PositionEncoding(num_hiddens)
         # n个解码器块
@@ -260,9 +260,9 @@ class TransformerDecoder(nn.Module):
         for i in range(num_layers):
             self.blocks.add_module(f'dec_blk_{i}', DecoderBlock(query_size, key_size, value_size, 
                                                                 num_hiddens, num_heads, norm_shape, 
-                                                                ffn_num_inputs, ffn_num_hiddens, i, dropout=dropout))
+                                                                ffn_num_inputs, ffn_num_hiddens, i, dropout=dropout, device=device))
         # 全连接层，隐藏状态到输出的映射
-        self.dense = nn.Linear(num_hiddens, vocab_size)
+        self.dense = nn.Linear(num_hiddens, vocab_size, device=device)
     
     def init_state(self, enc_outputs, enc_valid_lens):
         return (enc_outputs, enc_valid_lens, [None] * self.num_layers)
@@ -283,11 +283,12 @@ class TransformerDecoder(nn.Module):
         return self.dense(blk_X), blk_state
     
 class Transformer(nn.Module):
-    def __init__(self, encoder:TransformerEncoder, decoder:TransformerDecoder, num_steps):
+    def __init__(self, encoder:TransformerEncoder, decoder:TransformerDecoder, num_steps, device=None):
         super(Transformer, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.num_steps = num_steps
+        self.device = device
     
     def forward(self, enc_x, dec_x, enc_valid_lens):
         enc_outputs = self.encoder(enc_x, enc_valid_lens)
@@ -315,6 +316,12 @@ def train_transformer(model: Transformer, train_iter, tgt_vocab, lr=0.01, num_ep
             bos = torch.tensor([tgt_vocab['<bos>']] * Y.shape[0]).reshape(-1, 1)
             # 解码器的输入是 <bos>开头然后去掉最后一个词元
             dec_input = d2l.concat([bos, Y[:, :-1]], 1)  # Teacher forcing
+            X = X.to(model.device)
+            X_valid_len = X_valid_len.to(model.device)
+            dec_input = dec_input.to(model.device)
+            Y = Y.to(model.device)
+            Y_valid_len = Y_valid_len.to(model.device)
+
             Y_hat, state = model(X, dec_input, X_valid_len)
             l = loss(Y_hat, Y, Y_valid_len).sum()
             l.backward()
@@ -341,16 +348,16 @@ def transformer_predict(model: Transformer, sentence:str, src_vocab, tgt_vocab, 
     model.eval()
     sequence = sentence.lower().split(' ')
     sequence.append('<eos>')
-    valid_len = torch.tensor([len(sequence)])
+    valid_len = torch.tensor([len(sequence)], device=model.device)
     # x.shape = (1, valid_len)
-    X = torch.tensor(src_vocab[sequence]).reshape(1,-1)
+    X = torch.tensor(src_vocab[sequence], device=model.device).reshape(1,-1)
     # 填充序列，与transformer输入长度对齐
     X = pad_sequence(X, torch.tensor(src_vocab['<pad>']), model.num_steps)
     # 编码器输出
     enc_output = model.encoder(X, valid_len)
     dec_state = model.decoder.init_state(enc_output, valid_len)
     dec_X = torch.unsqueeze(
-        torch.tensor([tgt_vocab['<bos>']], dtype=torch.long),
+        torch.tensor([tgt_vocab['<bos>']], dtype=torch.long, device=model.device),
         dim=0)
     output_seq = []
     for i in range(model.num_steps):
@@ -367,12 +374,12 @@ def create_transformer(src_vocab_size, tgt_vocab_size, num_steps,
                        num_hiddens=32, num_heads=4, norm_shape=[32], 
                        ffn_num_inputs=32, ffn_num_hiddens=64, 
                        enc_layers=2, dec_layers=2, 
-                       dropout=0.1):
+                       dropout=0.1, device=None):
     encoder = TransformerEncoder(src_vocab_size, q_size, k_size, v_size, num_hiddens, num_heads, 
-                                 norm_shape, ffn_num_inputs, ffn_num_hiddens, enc_layers, dropout=dropout)
+                                 norm_shape, ffn_num_inputs, ffn_num_hiddens, enc_layers, dropout=dropout, device=device)
     decoder = TransformerDecoder(tgt_vocab_size, q_size, k_size, v_size, num_hiddens, num_heads, 
-                                 norm_shape, ffn_num_inputs, ffn_num_hiddens, dec_layers, dropout=dropout)
-    transformer = Transformer(encoder, decoder, num_steps)
+                                 norm_shape, ffn_num_inputs, ffn_num_hiddens, dec_layers, dropout=dropout, device=device)
+    transformer = Transformer(encoder, decoder, num_steps, device=device)
     return encoder, decoder, transformer 
 
 torch.serialization.add_safe_globals([Transformer, TransformerDecoder, TransformerEncoder, 

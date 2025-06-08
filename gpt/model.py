@@ -76,8 +76,8 @@ class TransformerBlock(nn.Module):
             dropout=dropout,
             device=device
         )
-        self.ln1 = nn.LayerNorm(d_embd)
-        self.ln2 = nn.LayerNorm(d_embd)
+        self.ln1 = nn.LayerNorm(d_embd, device=device)
+        self.ln2 = nn.LayerNorm(d_embd, device=device)
 
     def forward(self, X:torch.Tensor):
         # 前置LayerNorm
@@ -102,15 +102,15 @@ class GPT(nn.Module):
         super().__init__()
         self.device = config.deivce
         self.transformer = nn.ModuleDict(dict(
-            wte = nn.Embedding(config.vocab_size, config.d_embd),  # 词嵌入
-            wpe = nn.Embedding(config.block_size, config.d_embd),  # 位置编码
+            wte = nn.Embedding(config.vocab_size, config.d_embd, device=self.device),  # 词嵌入
+            wpe = nn.Embedding(config.block_size, config.d_embd, device=self.device),  # 位置编码
             embd_drop = nn.Dropout(config.dropout),
             layers =  nn.ModuleList([TransformerBlock(config.d_embd, 
                                         config.num_heads, 
                                         config.d_ff, 
                                         config.dropout, 
                                         device=self.device) for _ in range(config.num_layers)]), # transformer layers
-            ln = nn.LayerNorm(config.d_embd),
+            ln = nn.LayerNorm(config.d_embd, device=self.device),
             out = nn.Linear(config.d_embd, config.vocab_size, device=self.device) # 输出映射
         ))
         self.block_size = config.block_size
@@ -130,7 +130,7 @@ class GPT(nn.Module):
         out = self.transformer.out(y)
         return out
     
-    def generate(self, input: torch.Tensor, max_tokens: int):
+    def generate(self, input: torch.Tensor, max_tokens: int, end_token:float):
         self.eval()
         output = [token.item() for token in input[0]]
         with torch.no_grad():
@@ -144,4 +144,6 @@ class GPT(nn.Module):
                 next_token = torch.multinomial(probs, num_samples=1) # (1, 1) 从probs中采样一个token
                 input = torch.cat((input, next_token), dim=1) # (1, n+1) 把采样的token加到输入中
                 output.append(next_token.item()) # 把采样的token加到输出中
+                if next_token.item() == end_token: # 如果采样的token是结束符，则停止
+                    break
         return output

@@ -48,7 +48,7 @@ def run_d2l(lr, num_epochs, train:bool, predict:bool, input:str, params_file:str
                                                        num_hiddens, num_heads, norm_shape, 
                                                        ffn_num_inputs, ffn_num_hiddens, 
                                                        enc_num_layers, dec_num_layers, 
-                                                       dropout=0.1)
+                                                       dropout=0.1, device=d2l.try_gpu())
     if params_file is not None and params_file != '':
         load_params(transformer, params_file)
     if train:
