@@ -4,6 +4,7 @@ import torch
 from .model import GPT, GPTConfig
 from .trainer import Trainer, TrainerConfig
 from torch.utils.data import DataLoader, TensorDataset
+from .plot import plot_attention_weights
 
 def preprocess(content:str, block_size):
     content = content.lower() # 转小写
@@ -86,8 +87,11 @@ if __name__ == "__main__":
     predict_tokens = vocab.to_array(predict_tokens) # 转换成id
     predict_tokens = torch.tensor(predict_tokens, dtype=torch.long, device=device) # 转换成tensor (block_size,)
     predict_tokens = predict_tokens.view(1, -1) # 转换成 (1, block_size)
-    output = model.generate(predict_tokens, max_tokens=20)
+    output = model.generate(predict_tokens, max_tokens=20, end_token=vocab.to_array(["<eos>"])[0])
     print(output)
-    print(' '.join(vocab.to_tokens(output)))
+    output_tokens = vocab.to_tokens(output)
+    print(' '.join(output_tokens))
+
+    plot_attention_weights(model=model, tokens=output_tokens, vocab=vocab)
     
 

@@ -15,6 +15,7 @@ class DotProductAttention(nn.Module):
         # q: (B, n, d), k: (B, n, d), v: (B, n, d)
         scores = torch.bmm(q, k.transpose(1, 2)) / math.sqrt(d) # (B, n, n)
         scores = scores.masked_fill(self.mask[:, :n, :n] == 0, float('-inf'))
+        # (B, n, n) 表示n个词，每个词对其他词的注意力权重
         self.attention_weights = torch.nn.functional.softmax(scores, dim=-1)
         return torch.bmm(self.dropout(self.attention_weights), v) # (B, nq, d)
 
@@ -46,7 +47,6 @@ class MultiHeadSelfAttention(nn.Module):
         # 注意力
         attention = self.attention(q, k, v) # (B*num_heads, n, d_embd/num_heads)
         attention = self.merge_attention(attention) # (B, n, d_embd)
-
         return self.dropout(self.W_out(attention))
 
     def split_heads(self, X: torch.Tensor)->torch.Tensor:
@@ -60,6 +60,10 @@ class MultiHeadSelfAttention(nn.Module):
         X = X.reshape((-1, self.num_heads, X.shape[1], X.shape[2])) # (B, num_heads, n, d_embd/num_heads)
         X = X.transpose(1, 2) # (B, n, num_heads, d_embd/num_heads)
         return X.reshape((X.shape[0], X.shape[1], -1)) # (B, n, d_embd)
+    
+    @property
+    def attention_weights(self)->torch.Tensor:
+        return self.attention.attention_weights
 
 class TransformerBlock(nn.Module):
     def __init__(self, d_embd, num_heads, d_ff, dropout=0.0, device=None):
@@ -129,6 +133,9 @@ class GPT(nn.Module):
         y = self.transformer.ln(y)
         out = self.transformer.out(y)
         return out
+    
+    def attention_weights(self)->list[torch.Tensor]:
+        return [block.attention.attention_weights for block in self.transformer.layers]
     
     def generate(self, input: torch.Tensor, max_tokens: int, end_token:float):
         self.eval()
