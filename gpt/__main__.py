@@ -87,6 +87,6 @@ if __name__ == "__main__":
     output_tokens = vocab.to_tokens(output)
     print(' '.join(output_tokens))
 
-    plot_attention_weights(model=model, tokens=output_tokens, vocab=vocab)
+    plot_attention_weights(model=model, tokens=output_tokens, max_layer_heads=1, max_layers=1)
     
 
