@@ -8,33 +8,28 @@ from .plot import plot_attention_weights
 
 def preprocess(content:str, block_size):
     content = content.lower() # 转小写
-    # 拆分出句子
-    sentences = re.split(r'[.!?]', content) # 按.!?拆分
-    # 去掉空格
-    sentences = [sentence.strip() for sentence in sentences] # 去掉空格
-    # 去掉空句子
-    sentences = [sentence for sentence in sentences if sentence] # 去掉空句子
+    # 所有标点符号转换成空格
+    content = re.sub(r'[^\w\s]', ' ', content)
+    # 按空格 \n \t分词
+    tokens = re.split(r'[ \n\t]+', content)
 
-    # tokenize
-    tokens = [re.split(r'[ ,\n\t]+', sentence) for sentence in sentences] # 按空格或逗号拆分
-    # 去掉空token
-    tokens = [[token for token in sentence if token] for sentence in tokens] # 去掉空token
-    # 去掉token数量少于4的句子
-    tokens = [sentence for sentence in tokens if len(sentence) > 4] # 去掉token数量少于4的句子
+    # 去掉空的token
+    tokens = [token for token in tokens if token]
+
+    # 按每组block_size-1个token分组
+    tokens = [tokens[i:i+block_size-1] for i in range(0, len(tokens), block_size-1)]
+    # 每组末尾增加<eos>token
+    tokens = [sentence + ['<eos>'] for sentence in tokens]
+
+    tokens = tokens[:-1]
 
     # 构建vocab
     vocab = Vocab(tokens) # 构建vocab
-
-    # 添加结束符，如果句子长度大于block_size，则截断
-    for i in range(len(tokens)): # 遍历每个句子
-        if len(tokens[i]) > block_size: # 如果句子长度大于block_size，则截断
-            tokens[i] = tokens[i][:block_size] # 截断
-        tokens[i].append('<eos>') # 添加结束符
     
     # 填充到block_size
     for i in range(len(tokens)): # 遍历每个句子
-        if len(tokens[i]) < block_size + 1: # 如果句子长度小于block_size，则填充
-            tokens[i] = tokens[i] + ['<pad>'] * (block_size - len(tokens[i]) + 1) # 填充
+        if len(tokens[i]) < block_size: # 如果句子长度小于block_size，则填充
+            tokens[i] = tokens[i] + ['<pad>'] * (block_size - len(tokens[i])) # 填充
     # 把token转换成id
     tokens = [vocab.to_array(sentence) for sentence in tokens] # 把token转换成id
     return tokens, vocab
@@ -57,17 +52,17 @@ def prepare_data(file: str, block_size=128, batch_size=256, device=None):
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    batch_size = 256
-    block_size = 20
-    train_iter, vocab = prepare_data(file='.\\gpt\\short-text.txt', block_size=block_size, device=device, batch_size=batch_size)
+    batch_size = 32
+    block_size = 128
+    train_iter, vocab = prepare_data(file='.\\gpt\\timemachine.txt', block_size=block_size, device=device, batch_size=batch_size)
     config = GPTConfig(
         vocab_size=len(vocab),
         block_size=block_size,
-        num_layers=6,
-        num_heads=8,
-        d_embd=512,
-        d_ff=2048,
-        dropout=0.1,
+        num_layers=2,
+        num_heads=4,
+        d_embd=768,
+        d_ff=3072,
+        dropout=0.0,
         device=device,
     )
     model = GPT(config)
@@ -77,8 +72,8 @@ if __name__ == "__main__":
         model_config=config,
         conf=TrainerConfig(
             vocab=vocab,
-            num_epochs=30,
-            lr=0.003,
+            num_epochs=1,
+            lr=1.5e-4,
         )
     )
     trainer.optimize(train_iter)

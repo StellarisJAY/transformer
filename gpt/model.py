@@ -27,11 +27,11 @@ class MultiHeadSelfAttention(nn.Module):
         self.d_embd = d_embd
         self.device = device
         # 注意力对齐
-        self.W_q = nn.Linear(d_embd, d_embd, device=device, bias=False)
-        self.W_k = nn.Linear(d_embd, d_embd, device=device, bias=False)
-        self.W_v = nn.Linear(d_embd, d_embd, device=device, bias=False)
+        self.W_q = nn.Linear(d_embd, d_embd*num_heads, device=device, bias=False)
+        self.W_k = nn.Linear(d_embd, d_embd*num_heads, device=device, bias=False)
+        self.W_v = nn.Linear(d_embd, d_embd*num_heads, device=device, bias=False)
         # 输出
-        self.W_out = nn.Linear(d_embd, d_embd, device=device, bias=False)
+        self.W_out = nn.Linear(d_embd*num_heads, d_embd, device=device, bias=False)
         # 点积注意力
         self.attention = DotProductAttention(d_embd, dropout=dropout, device=device)
         self.dropout = nn.Dropout(dropout)
